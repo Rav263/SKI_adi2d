@@ -13,28 +13,24 @@ void relax();
 void init();
 void verify();
 int numt; 
-int *isync;
 
 
 int main(int an, char **as) {
     numt = omp_get_num_threads();	
 
-    isync = (int*) malloc(numt*sizeof(int));
+    char isync[numt];
 	double time = omp_get_wtime();
 	
     omp_set_num_threads(atoi(as[1]));
 	init();
 	for(int it = 1; it <= itmax; it++) {
 		eps = 0.;
-		relax();
+		relax(isync);
         printf( "it=%4i eps=%f\n", it, eps);
 		if (eps < maxeps) break;
 	}
-    
-    free(isync);
 	verify();
 	
-    
     printf("time = %f\n", omp_get_wtime()-time);
 	return 0;
 }
@@ -48,7 +44,7 @@ void init() {
 	    }
     }
 } 
-void relax() {
+void relax(char *isync) {
 #pragma omp parallel shared(A,numt) reduction(max:eps) 
     {	
 	    int iam = omp_get_thread_num();
