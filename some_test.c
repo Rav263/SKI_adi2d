@@ -4,12 +4,11 @@
 #include <omp.h>
 #define  Max(a,b) ((a)>(b)?(a):(b))
 #define  Min(a,b) ((a)<(b)?(a):(b))
-#define  N   (8192)
+#define  N  32768//16384//(8192)
 double   maxeps = 0.1e-7;
 int itmax = 100;
-double eps;
 double A [N][N];
-void relax();
+double relax(char *);
 void init();
 void verify();
 int numt; 
@@ -24,8 +23,7 @@ int main(int an, char **as) {
     omp_set_num_threads(atoi(as[1]));
 	init();
 	for(int it = 1; it <= itmax; it++) {
-		eps = 0.;
-		relax(isync);
+        double eps = relax(isync);
         printf( "it=%4i eps=%f\n", it, eps);
 		if (eps < maxeps) break;
 	}
@@ -44,7 +42,8 @@ void init() {
 	    }
     }
 } 
-void relax(char *isync) {
+double relax(char *isync) {
+    double eps = 0.0;
 #pragma omp parallel shared(A,numt) reduction(max:eps) 
     {	
 	    int iam = omp_get_thread_num();
@@ -83,6 +82,8 @@ void relax(char *isync) {
 	        }
     	}
     }
+
+    return eps;
 }
 void verify() { 
 	double s = 0.;
