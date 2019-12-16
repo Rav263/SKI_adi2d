@@ -4,7 +4,7 @@
 #include <stdio.h>
 #define  Max(a,b) ((a)>(b)?(a):(b))
 
-#define  N  1024//(2*2*2*2*2*2+2)
+#define  N  2048//(2*2*2*2*2*2+2)
 double maxeps = 0.1e-7;
 int itmax = 100;
 
@@ -44,7 +44,7 @@ void calc_start_end(int *start, int *end, int rank) {
     }
 }
 
-void synchronize_string() {
+void synchronize_string_A() {
     MPI_Request req[world_size];
     for (int i = 0; i < world_size; i++) {
         if (i == world_rank) continue;
@@ -62,73 +62,21 @@ void synchronize_string() {
     }
 }
 
-void print_tmp_matrix(double *tmp_matrix, int height, int width) {
-    fprintf(stderr, "thread %d, sending matrix:\n", world_rank);
-
-    for (int i = 0; i < height; i++) {
-        for (int j = 0; j < width; j++) {
-            fprintf(stderr, "%lf ", tmp_matrix[i * width + j]);
-        }
-        fprintf(stderr, "\n");
-    }
-    fprintf(stderr, "\n");
-}
-
-/*
-void synchronize_colums() {
+void synchronize_string_B() {
     MPI_Request req[world_size];
-
-    double tmp_matrix[(N - 2) * (world_end - world_start)];
-
-    for (int i = 1; i < N - 1; i++) {
-        for (int j = world_start; j < world_end; j++) {
-            tmp_matrix[(i - 1) * (world_end - world_start) + (j - world_start)] = A[i][j];
-        }
-    }
-    
     for (int i = 0; i < world_size; i++) {
         if (i == world_rank) continue;
-
-        MPI_Isend(tmp_matrix, (N - 2) * (world_end - world_start), MPI_DOUBLE, i, 1, MPI_COMM_WORLD, &req[i]);
+        
+        MPI_Isend(B[world_start], N * (world_end - world_start), MPI_DOUBLE, i, 0, MPI_COMM_WORLD, &req[i]);
         MPI_Request_free(&req[i]);
     }
 
     for (int i = 0; i < world_size; i++) {
         if (i == world_rank) continue;
-
+        
         int start, end;
         calc_start_end(&start, &end, i);
-        double an_tmp_matrix[(N - 2) * (end - start)];
-
-        MPI_Recv(an_tmp_matrix, (N - 2) * (end - start), MPI_DOUBLE, i, 1, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-
-        for (int k = 1; k < N - 1; k++) {
-            for (int j = start; j < end; j++) {
-                A[k][j] = an_tmp_matrix[(k - 1) * (end - start) + (j - start)];
-            }
-        }
-    }
-}*/
-
-void synchronize_colums() {
-    MPI_Request req[world_size];
-
-    for (int t = 0; t < world_size; t++) {
-        if (t == world_rank) continue;
-        for (int i = 1; i < N - 1; i++) {
-            MPI_Isend(&A[i][world_start], (world_end - world_start), MPI_DOUBLE, t, 0, MPI_COMM_WORLD, &req[t]);
-            MPI_Request_free(&req[t]);
-        }
-    }
-
-    for (int t = 0; t < world_size; t++) {
-        if (t == world_rank) continue;
-        for (int i = 1; i < N - 1; i++) {
-            int start, end;
-            calc_start_end(&start, &end, t);
-        
-            MPI_Recv(&A[i][start], (end - start), MPI_DOUBLE, t, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-        }
+        MPI_Recv(B[start], N * (end - start), MPI_DOUBLE, i, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
     }
 }
 
@@ -161,31 +109,34 @@ int main(int an, char **as)
 void init() {
     for (int i = world_start; i < world_end; i++) {
 	    for(int j = 1; j < N - 1; j++) {
-		    A[i][j] = (1. + i + j) ;
+		    A[i][j] = (1. + i + j);
+            B[j][i] = (1. + i + j);
         }
     }
-    synchronize_string();
+
+    synchronize_string_A();
+    synchronize_string_B();
 } 
 
 
 void relax() {
 	for(int i = 1; i < N - 1; i++) {
 	    for(int j = world_start; j < world_end; j++) {
-		    A[i][j] = (A[i - 1][j] + A[i + 1][j]) / 2.;
+		    B[j][i] = (A[i - 1][j] + A[i + 1][j]) / 2.;
         }
 	}
-    synchronize_colums();
+    synchronize_string_B();
     double local_eps = 0;
 
 	for(int i = world_start; i < world_end; i++) {
         for(int j = 1; j < N - 1; j++) {
-		    double e = A[i][j];
-		    A[i][j] = (A[i][j - 1] + A[i][j + 1]) / 2.;
+		    double e = B[j][i];
+		    A[i][j] = (B[j - 1][i] + B[j + 1][i]) / 2.;
 		    local_eps = Max(local_eps, fabs(e - A[i][j]));
         }
 	}
 
-    synchronize_string();
+    synchronize_string_A();
     MPI_Reduce(&local_eps, &eps, 1, MPI_DOUBLE, MPI_MAX, 0, MPI_COMM_WORLD);
 }
 
